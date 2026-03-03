@@ -84,3 +84,11 @@ size_t Config::cache_size() const {
 std::string Config::log_level() const {
     return get("log_level", "info");
 }
+
+size_t Config::thread_count() const {
+    return static_cast<size_t>(std::stoul(get("thread_count", "4")));
+}
+
+std::string Config::whitelist_path() const {
+    return get("whitelist_path", "config/whitelist.txt");
+}

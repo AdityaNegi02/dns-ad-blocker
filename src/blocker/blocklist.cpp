@@ -17,12 +17,11 @@ std::string Blocklist::normalize(const std::string& domain) {
 }
 
 // ---------------------------------------------------------------------------
-// load
+// load_domains (private static helper)
 // ---------------------------------------------------------------------------
-// Reads the file line by line. Lines starting with '#' or that are empty
-// (after whitespace trimming) are skipped. All other lines are added to the
-// blocked set after normalization.
-bool Blocklist::load(const std::string& filepath) {
+// Shared logic for reading domains from a plain-text file into a set.
+bool Blocklist::load_domains(const std::string& filepath,
+                             std::unordered_set<std::string>& target) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
         return false;
@@ -41,22 +40,46 @@ bool Blocklist::load(const std::string& filepath) {
         // Skip comment lines
         if (line.empty() || line[0] == '#') continue;
 
-        blocked_domains_.insert(normalize(line));
+        target.insert(normalize(line));
     }
 
     return true;
 }
 
 // ---------------------------------------------------------------------------
+// load
+// ---------------------------------------------------------------------------
+// Reads the file line by line. Lines starting with '#' or that are empty
+// (after whitespace trimming) are skipped. All other lines are added to the
+// blocked set after normalization.
+bool Blocklist::load(const std::string& filepath) {
+    return load_domains(filepath, blocked_domains_);
+}
+
+// ---------------------------------------------------------------------------
+// load_whitelist
+// ---------------------------------------------------------------------------
+// Same format as the blocklist file. Domains loaded here will never be blocked.
+bool Blocklist::load_whitelist(const std::string& filepath) {
+    return load_domains(filepath, whitelisted_domains_);
+}
+
+// ---------------------------------------------------------------------------
 // is_blocked
 // ---------------------------------------------------------------------------
-// Checks if `domain` or any parent domain is blocked.
+// Checks if `domain` or any parent domain is blocked and NOT whitelisted.
+// Whitelist check is done first at every level — if any level matches the
+// whitelist, the domain is considered allowed regardless of the blocklist.
 // E.g. "sub.ads.example.com" → checks "sub.ads.example.com", "ads.example.com",
 //      "example.com", "com".
 bool Blocklist::is_blocked(const std::string& domain) const {
     std::string check = normalize(domain);
 
     while (true) {
+        // Whitelist takes priority: if any level is whitelisted, allow it
+        if (whitelisted_domains_.count(check)) {
+            return false;
+        }
         if (blocked_domains_.count(check)) {
             return true;
         }
@@ -83,6 +106,18 @@ void Blocklist::remove(const std::string& domain) {
     blocked_domains_.erase(normalize(domain));
 }
 
+void Blocklist::whitelist(const std::string& domain) {
+    whitelisted_domains_.insert(normalize(domain));
+}
+
+void Blocklist::unwhitelist(const std::string& domain) {
+    whitelisted_domains_.erase(normalize(domain));
+}
+
 size_t Blocklist::size() const {
     return blocked_domains_.size();
+}
+
+size_t Blocklist::whitelist_size() const {
+    return whitelisted_domains_.size();
 }

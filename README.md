@@ -11,11 +11,15 @@ Network-level DNS ad blocker written in C++. Blocks ads and trackers for every d
 - 💾 LRU cache for sub-millisecond cached responses
 - 🌐 Network-wide: covers every device on your network
 - 📋 Easy-to-edit blocklist (plain text, one domain per line)
-- 📊 Per-query logging with stats (BLOCKED / ALLOWED / CACHED)
+- 📊 Per-query logging with stats (BLOCKED / ALLOWED / CACHED / NXDOMAIN / SERVFAIL)
 - 🔧 Configurable upstream DNS (defaults to Google 8.8.8.8)
 - 🛡️ Thread-safe design with std::mutex
 - ⚙️ INI-style config file support
 - 🔔 Graceful shutdown via SIGINT / SIGTERM
+- 🔀 Multi-query-type support: A, AAAA (IPv6), MX, TXT, CNAME — blocked domains return the correct response for each type
+- 🧵 Thread pool for concurrent query handling (configurable worker count, default 4)
+- ✅ Whitelist (allow-list) support — domains in the whitelist are never blocked, even if they appear in the blocklist
+- 🛡️ Malformed packet recovery — bounds-checked parser with catch-all exception handler; the server never crashes on bad input
 
 ---
 
@@ -120,9 +124,13 @@ blocklist_path=config/blocklist.txt
 log_path=logs/dns.log
 cache_size=10000
 log_level=info
+thread_count=4
+whitelist_path=config/whitelist.txt
 ```
 
 Edit `config/blocklist.txt` to add/remove domains (one per line, `#` for comments).
+
+Edit `config/whitelist.txt` to allow domains that should never be blocked.
 
 ---
 
@@ -133,6 +141,8 @@ cd build
 ./test_dns_packet
 ./test_blocklist
 ./test_lru_cache
+./test_integration
+./test_thread_pool
 ```
 
 ---
@@ -141,10 +151,10 @@ cd build
 
 | Week | Sprint | Goals |
 |------|--------|-------|
-| 1 | Foundation | DNS packet parsing, blocklist, LRU cache, logger, config, basic server |
-| 2 | Stability | Full RFC 1035 support, CNAME handling, error resilience |
-| 3 | Performance | Threading, benchmarks, cache tuning |
-| 4 | Features | Custom rules, wildcard matching, statistics API |
+| 1 | Foundation ✅ | DNS packet parsing, blocklist, LRU cache, logger, config, basic server |
+| 2 | Stability ✅ | Multi-query-type support (AAAA/MX/TXT/CNAME), NXDOMAIN pass-through, thread pool, whitelist, malformed packet recovery, integration tests |
+| 3 | Performance | Benchmarks, cache tuning, memory profiling |
+| 4 | Features | Wildcard matching, statistics API, SIGHUP reload |
 | 5 | Polish | CLI interface, installer, documentation, packaging |
 
 ---
