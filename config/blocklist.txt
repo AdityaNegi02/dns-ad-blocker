@@ -1,0 +1,79 @@
+# DNS Ad Blocker — Blocklist
+# One domain per line. Subdomains of listed domains are automatically blocked.
+# Lines starting with # are comments.
+
+# ---- Google Ads ----
+ads.google.com
+pagead2.googlesyndication.com
+doubleclick.net
+googleadservices.com
+googleads.g.doubleclick.net
+adservice.google.com
+tpc.googlesyndication.com
+www.googleadservices.com
+
+# ---- Facebook / Meta tracking ----
+pixel.facebook.com
+an.facebook.com
+ads.facebook.com
+connect.facebook.net
+graph.facebook.com
+
+# ---- Amazon Ads ----
+aax.amazon-adsystem.com
+s.amazon-adsystem.com
+mads.amazon-adsystem.com
+
+# ---- Ad networks ----
+adnxs.com
+criteo.com
+taboola.com
+outbrain.com
+rubiconproject.com
+pubmatic.com
+openx.net
+adsrvr.org
+moatads.com
+adsafeprotected.com
+media.net
+yieldmo.com
+smartadserver.com
+bidswitch.net
+adtechus.com
+advertising.com
+ads.yahoo.com
+ads.twitter.com
+syndication.twitter.com
+adserver.yahoo.com
+
+# ---- Analytics & Tracking ----
+scorecardresearch.com
+quantserve.com
+mixpanel.com
+hotjar.com
+fullstory.com
+heap.io
+segment.io
+segment.com
+intercom.io
+kissmetrics.com
+mouseflow.com
+clicktale.net
+crazyegg.com
+d7.zedo.com
+
+# ---- Popup & Redirect Ads ----
+popads.net
+propellerads.com
+popcash.net
+revcontent.com
+mgid.com
+earnhoney.com
+clickadu.com
+adcash.com
+exoclick.com
+trafficjunky.net
+
+# ---- Malware / Phishing ----
+malware-traffic-analysis.net
+ads.malvertising.com
