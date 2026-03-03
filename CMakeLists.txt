@@ -38,3 +38,21 @@ add_executable(test_lru_cache
 )
 target_include_directories(test_lru_cache PRIVATE src/)
 target_link_libraries(test_lru_cache pthread)
+
+# test_integration
+add_executable(test_integration
+    tests/test_integration.cpp
+    src/dns/dns_packet.cpp
+    src/blocker/blocklist.cpp
+    src/cache/lru_cache.cpp
+)
+target_include_directories(test_integration PRIVATE src/)
+target_link_libraries(test_integration pthread)
+
+# test_thread_pool
+add_executable(test_thread_pool
+    tests/test_thread_pool.cpp
+    src/thread_pool/thread_pool.cpp
+)
+target_include_directories(test_thread_pool PRIVATE src/)
+target_link_libraries(test_thread_pool pthread)

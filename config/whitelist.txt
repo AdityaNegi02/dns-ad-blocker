@@ -1,0 +1,12 @@
+# ====================================
+# DNS Ad Blocker — Whitelist (Allow-list)
+# ====================================
+# Domains listed here will NEVER be blocked,
+# even if they appear in the blocklist.
+# One domain per line. Lines starting with # are comments.
+
+# Example: Allow Google Analytics for your own site
+# analytics.google.com
+
+# Example: Allow specific ad-supported sites you want to support
+# example.com

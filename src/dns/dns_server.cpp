@@ -6,17 +6,21 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
+#include <vector>
 
 DNSServer::DNSServer(uint16_t port, Blocklist& blocklist, LRUCache& cache,
-                     UpstreamResolver& resolver, Logger& logger)
+                     UpstreamResolver& resolver, Logger& logger,
+                     size_t thread_count)
     : port_(port),
       socket_fd_(-1),
       running_(false),
       blocklist_(blocklist),
       cache_(cache),
       resolver_(resolver),
-      logger_(logger) {}
+      logger_(logger),
+      thread_pool_(std::make_unique<ThreadPool>(thread_count)) {}
 
 // ---------------------------------------------------------------------------
 // start
@@ -60,7 +64,13 @@ void DNSServer::start() {
             logger_.log_warning("DNSServer: recvfrom error (errno=" + std::to_string(errno) + ")");
             continue;
         }
-        handle_query(buffer, static_cast<size_t>(len), client_addr);
+
+        // Copy buffer data for the thread (buffer will be reused by next recvfrom)
+        auto query_data = std::make_shared<std::vector<uint8_t>>(buffer, buffer + len);
+        auto client     = client_addr; // copy for lambda capture
+        thread_pool_->submit([this, query_data, client]() {
+            handle_query(query_data->data(), query_data->size(), client);
+        });
     }
 }
 
@@ -72,6 +82,10 @@ void DNSServer::stop() {
     if (socket_fd_ >= 0) {
         close(socket_fd_);
         socket_fd_ = -1;
+    }
+    // Drain in-progress tasks before returning
+    if (thread_pool_) {
+        thread_pool_->shutdown();
     }
 }
 
@@ -119,7 +133,7 @@ void DNSServer::handle_query(const uint8_t* buffer, size_t length,
 
         // --- Step 2: Check blocklist ---
         if (blocklist_.is_blocked(domain)) {
-            auto blocked_resp = dns::build_response(query, "0.0.0.0");
+            auto blocked_resp = dns::build_blocked_response(query);
             sendto(socket_fd_, blocked_resp.data(), blocked_resp.size(), 0,
                    reinterpret_cast<const struct sockaddr*>(&client_addr), sizeof(client_addr));
             logger_.log_query(domain, "BLOCKED", client_ip);
@@ -129,9 +143,26 @@ void DNSServer::handle_query(const uint8_t* buffer, size_t length,
         // --- Step 3: Forward to upstream ---
         auto upstream_resp = resolver_.resolve(buffer, length);
 
+        // Determine the RCODE in the upstream response for logging and TTL decisions
+        uint8_t rcode = dns::get_rcode(upstream_resp);
+
+        if (rcode == 2) {
+            // SERVFAIL — do not cache; send the response back as-is
+            if (upstream_resp.size() >= 2) {
+                upstream_resp[0] = (query.header.id >> 8) & 0xFF;
+                upstream_resp[1] = query.header.id & 0xFF;
+            }
+            sendto(socket_fd_, upstream_resp.data(), upstream_resp.size(), 0,
+                   reinterpret_cast<const struct sockaddr*>(&client_addr), sizeof(client_addr));
+            logger_.log_query(domain, "SERVFAIL", client_ip);
+            return;
+        }
+
         // Cache the original upstream response BEFORE modifying the transaction ID,
         // so cached entries are always ID-neutral and can serve any future query.
-        cache_.put(domain, upstream_resp, 300);
+        // NXDOMAIN (RCODE=3) is cached with a shorter TTL to avoid hammering upstream.
+        uint32_t cache_ttl = (rcode == 3) ? 60 : 300;
+        cache_.put(domain, upstream_resp, cache_ttl);
 
         // Now update the transaction ID for the current client and send
         if (upstream_resp.size() >= 2) {
@@ -140,9 +171,14 @@ void DNSServer::handle_query(const uint8_t* buffer, size_t length,
         }
         sendto(socket_fd_, upstream_resp.data(), upstream_resp.size(), 0,
                reinterpret_cast<const struct sockaddr*>(&client_addr), sizeof(client_addr));
-        logger_.log_query(domain, "ALLOWED", client_ip);
+
+        // Log NXDOMAIN separately so operators can distinguish it from normal allowed queries
+        std::string action = (rcode == 3) ? "NXDOMAIN" : "ALLOWED";
+        logger_.log_query(domain, action, client_ip);
 
     } catch (const std::exception& ex) {
         logger_.log_error("handle_query error from " + client_ip + ": " + ex.what());
+    } catch (...) {
+        logger_.log_error("handle_query unknown error from " + client_ip);
     }
 }

@@ -60,14 +60,18 @@ int main(int argc, char* argv[]) {
     std::string bl_path   = config.blocklist_path();
     std::string log_path  = config.log_path();
     size_t cache_sz       = config.cache_size();
+    size_t thread_count   = config.thread_count();
+    std::string wl_path   = config.whitelist_path();
 
     std::cout << "[INFO] Configuration loaded:\n"
-              << "  port           = " << port       << "\n"
-              << "  upstream_dns   = " << upstream   << "\n"
-              << "  upstream_port  = " << up_port    << "\n"
-              << "  blocklist_path = " << bl_path    << "\n"
-              << "  log_path       = " << log_path   << "\n"
-              << "  cache_size     = " << cache_sz   << "\n";
+              << "  port           = " << port         << "\n"
+              << "  upstream_dns   = " << upstream     << "\n"
+              << "  upstream_port  = " << up_port      << "\n"
+              << "  blocklist_path = " << bl_path      << "\n"
+              << "  log_path       = " << log_path     << "\n"
+              << "  cache_size     = " << cache_sz     << "\n"
+              << "  thread_count   = " << thread_count << "\n"
+              << "  whitelist_path = " << wl_path      << "\n";
 
     // --- Load blocklist ---
     Blocklist blocklist;
@@ -76,11 +80,17 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[INFO] Loaded " << blocklist.size() << " domains into blocklist\n";
 
+    // --- Load whitelist ---
+    if (!blocklist.load_whitelist(wl_path)) {
+        std::cerr << "[WARNING] Could not load whitelist from: " << wl_path << " — continuing without whitelist\n";
+    }
+    std::cout << "[INFO] Loaded " << blocklist.whitelist_size() << " whitelisted domains\n";
+
     // --- Initialise components ---
     Logger           logger(log_path);
     LRUCache         cache(cache_sz);
     UpstreamResolver resolver(upstream, up_port);
-    DNSServer        server(port, blocklist, cache, resolver, logger);
+    DNSServer        server(port, blocklist, cache, resolver, logger, thread_count);
 
     // --- Register signal handlers ---
     g_server = &server;

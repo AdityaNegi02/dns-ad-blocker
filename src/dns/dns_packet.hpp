@@ -5,6 +5,17 @@
 
 namespace dns {
 
+// ---------------------------------------------------------------------------
+// Common DNS query type constants (RFC 1035 / RFC 3596)
+// ---------------------------------------------------------------------------
+constexpr uint16_t QTYPE_A     = 1;   // IPv4 address
+constexpr uint16_t QTYPE_NS    = 2;   // Name server
+constexpr uint16_t QTYPE_CNAME = 5;   // Canonical name
+constexpr uint16_t QTYPE_SOA   = 6;   // Start of authority
+constexpr uint16_t QTYPE_MX    = 15;  // Mail exchange
+constexpr uint16_t QTYPE_TXT   = 16;  // Text record
+constexpr uint16_t QTYPE_AAAA  = 28;  // IPv6 address
+
 // DNS header as defined in RFC 1035 Section 4.1.1
 struct DNSHeader {
     uint16_t id;       // Transaction ID
@@ -37,6 +48,16 @@ std::string extract_domain(const DNSPacket& packet);
 
 // Build a DNS response that answers all questions with the given IPv4 address (e.g. "0.0.0.0")
 std::vector<uint8_t> build_response(const DNSPacket& query, const std::string& ipv4_address);
+
+// Build a blocked response that handles the query type appropriately:
+//   - QTYPE_A    → returns 0.0.0.0
+//   - QTYPE_AAAA → returns :: (all-zeros IPv6)
+//   - All other  → returns NXDOMAIN (RCODE=3), no answer section
+std::vector<uint8_t> build_blocked_response(const DNSPacket& query);
+
+// Extract the RCODE (bottom 4 bits of byte 3) from a raw DNS response.
+// Returns 0xFF if the response is too short.
+uint8_t get_rcode(const std::vector<uint8_t>& response);
 
 // Parse a DNS domain name starting at `offset` in `data`, advancing `offset` past it.
 // Handles RFC 1035 label encoding and compression pointers (0xC0 prefix).
