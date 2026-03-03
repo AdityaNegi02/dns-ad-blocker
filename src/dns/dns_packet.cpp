@@ -150,80 +150,62 @@ std::string extract_domain(const DNSPacket& packet) {
 std::vector<uint8_t> build_response(const DNSPacket& query, const std::string& ipv4_address) {
     std::vector<uint8_t> response;
 
+    // Helper: append a uint16_t in network byte order
+    auto push_u16 = [&](uint16_t host_val) {
+        uint16_t net_val = htons(host_val);
+        uint8_t bytes[2];
+        std::memcpy(bytes, &net_val, 2);
+        response.push_back(bytes[0]);
+        response.push_back(bytes[1]);
+    };
+
+    // Helper: append a uint32_t in network byte order
+    auto push_u32 = [&](uint32_t host_val) {
+        uint32_t net_val = htonl(host_val);
+        uint8_t bytes[4];
+        std::memcpy(bytes, &net_val, 4);
+        for (int j = 0; j < 4; ++j) response.push_back(bytes[j]);
+    };
+
     // --- Header (12 bytes) ---
-    // Transaction ID — must match the query
-    uint16_t id_be = htons(query.header.id);
-    response.push_back((id_be >> 8) & 0xFF);
-    response.push_back(id_be & 0xFF);
+    push_u16(query.header.id);       // Transaction ID
+    push_u16(0x8180);                // Flags: QR=1, RD=1, RA=1
+    push_u16(query.header.qd_count); // QDCOUNT
+    push_u16(static_cast<uint16_t>(query.questions.size())); // ANCOUNT
+    push_u16(0);                     // NSCOUNT
+    push_u16(0);                     // ARCOUNT
 
-    // Flags: QR=1 (response), Opcode=0, AA=0, TC=0, RD=1, RA=1, Z=0, RCODE=0
-    // 0x8180 = 1000 0001 1000 0000
-    response.push_back(0x81);
-    response.push_back(0x80);
-
-    // QDCOUNT — same as the query
-    uint16_t qd = htons(query.header.qd_count);
-    response.push_back((qd >> 8) & 0xFF);
-    response.push_back(qd & 0xFF);
-
-    // ANCOUNT — one answer per question
-    uint16_t an = htons(static_cast<uint16_t>(query.questions.size()));
-    response.push_back((an >> 8) & 0xFF);
-    response.push_back(an & 0xFF);
-
-    // NSCOUNT = 0, ARCOUNT = 0
-    response.push_back(0x00); response.push_back(0x00);
-    response.push_back(0x00); response.push_back(0x00);
-
-    // --- Question section (copied verbatim from query) ---
+    // --- Question section ---
     for (const auto& q : query.questions) {
         auto encoded = encode_domain_name(q.qname);
         response.insert(response.end(), encoded.begin(), encoded.end());
-
-        uint16_t qt = htons(q.qtype);
-        response.push_back((qt >> 8) & 0xFF);
-        response.push_back(qt & 0xFF);
-
-        uint16_t qc = htons(q.qclass);
-        response.push_back((qc >> 8) & 0xFF);
-        response.push_back(qc & 0xFF);
+        push_u16(q.qtype);
+        push_u16(q.qclass);
     }
 
-    // --- Answer section (one RR per question) ---
+    // --- Answer section ---
     for (size_t i = 0; i < query.questions.size(); ++i) {
-        // NAME: compression pointer to offset 12 (start of question section)
-        // 0xC0 0x0C means "pointer to byte 12"
+        // NAME: compression pointer to offset 12
         response.push_back(0xC0);
         response.push_back(0x0C);
 
-        // TYPE = A (1)
-        response.push_back(0x00);
-        response.push_back(0x01);
+        push_u16(1);     // TYPE = A
+        push_u16(1);     // CLASS = IN
 
-        // CLASS = IN (1)
-        response.push_back(0x00);
-        response.push_back(0x01);
+        // TTL = 300 seconds (4 bytes, network order)
+        push_u32(300);
 
-        // TTL = 300 seconds
-        response.push_back(0x00);
-        response.push_back(0x00);
-        response.push_back(0x01);
-        response.push_back(0x2C);
+        push_u16(4);     // RDLENGTH = 4 bytes
 
-        // RDLENGTH = 4 bytes (IPv4)
-        response.push_back(0x00);
-        response.push_back(0x04);
-
-        // RDATA: parse the dotted IPv4 string into 4 bytes
+        // RDATA: IPv4 address
         struct in_addr addr{};
         if (inet_pton(AF_INET, ipv4_address.c_str(), &addr) != 1) {
-            // Default to 0.0.0.0 on parse failure
             response.push_back(0x00);
             response.push_back(0x00);
             response.push_back(0x00);
             response.push_back(0x00);
         } else {
-            uint32_t ip = addr.s_addr; // Already in network byte order from inet_pton
+            uint32_t ip = addr.s_addr;
             response.push_back((ip >> 0) & 0xFF);
             response.push_back((ip >> 8) & 0xFF);
             response.push_back((ip >> 16) & 0xFF);
