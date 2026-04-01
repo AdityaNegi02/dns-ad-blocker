@@ -92,3 +92,7 @@ size_t Config::thread_count() const {
 std::string Config::whitelist_path() const {
     return get("whitelist_path", "config/whitelist.txt");
 }
+
+uint32_t Config::stats_interval() const {
+    return static_cast<uint32_t>(std::stoul(get("stats_interval", "30")));
+}

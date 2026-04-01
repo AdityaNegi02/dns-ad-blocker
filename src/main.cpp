@@ -62,6 +62,7 @@ int main(int argc, char* argv[]) {
     size_t cache_sz       = config.cache_size();
     size_t thread_count   = config.thread_count();
     std::string wl_path   = config.whitelist_path();
+    uint32_t stats_interval = config.stats_interval();
 
     std::cout << "[INFO] Configuration loaded:\n"
               << "  port           = " << port         << "\n"
@@ -71,7 +72,8 @@ int main(int argc, char* argv[]) {
               << "  log_path       = " << log_path     << "\n"
               << "  cache_size     = " << cache_sz     << "\n"
               << "  thread_count   = " << thread_count << "\n"
-              << "  whitelist_path = " << wl_path      << "\n";
+              << "  whitelist_path = " << wl_path      << "\n"
+              << "  stats_interval = " << stats_interval << "s\n";
 
     // --- Load blocklist ---
     Blocklist blocklist;
@@ -90,7 +92,7 @@ int main(int argc, char* argv[]) {
     Logger           logger(log_path);
     LRUCache         cache(cache_sz);
     UpstreamResolver resolver(upstream, up_port);
-    DNSServer        server(port, blocklist, cache, resolver, logger, thread_count);
+    DNSServer        server(port, blocklist, cache, resolver, logger, thread_count, stats_interval);
 
     // --- Register signal handlers ---
     g_server = &server;

@@ -121,3 +121,16 @@ size_t Blocklist::size() const {
 size_t Blocklist::whitelist_size() const {
     return whitelisted_domains_.size();
 }
+
+// ---------------------------------------------------------------------------
+// estimated_memory
+// ---------------------------------------------------------------------------
+// Approximates the heap memory used by the blocked_domains_ set.
+// Per-entry cost: domain string length + 64 bytes for unordered_set node overhead.
+size_t Blocklist::estimated_memory() const {
+    size_t total = 0;
+    for (const auto& domain : blocked_domains_) {
+        total += domain.size() + 64;
+    }
+    return total;
+}

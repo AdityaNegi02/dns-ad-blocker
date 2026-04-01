@@ -36,11 +36,14 @@
 ### Sprint 3 (Week 3): Performance
 **Goal**: Achieve target throughput and measure performance.
 
-- [ ] Benchmark suite (qps, p50/p99 latency)
-- [ ] Cache hit-rate logging
-- [ ] Memory profiling
+- [x] Benchmark suite (qps, p50/p99 latency) — `tools/benchmark.cpp`
+- [x] Cache hit-rate logging — periodic stats thread in DNSServer
+- [x] Memory profiling — `src/utils/memory_stats.hpp/cpp`, `estimated_memory()` on cache and blocklist
+- [x] Socket buffer tuning + EDNS0-sized receive buffer (4096 bytes)
+- [x] Per-query-type stats (nxdomain_count, servfail_count in QueryStats)
+- [x] Test suite for benchmark utilities — `tests/test_benchmark_utils.cpp`
 
-**Definition of Done**: 1000+ qps on a single core, < 50ms cached latency.
+**Definition of Done**: 1000+ qps on a single core, < 50ms cached latency. ✅
 
 ---
 

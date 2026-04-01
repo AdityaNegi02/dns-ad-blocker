@@ -6,11 +6,13 @@
 
 // Aggregate query statistics for monitoring
 struct QueryStats {
-    uint64_t total_queries = 0;
-    uint64_t blocked_count = 0;
-    uint64_t allowed_count = 0;
-    uint64_t cached_count  = 0;
-    uint64_t error_count   = 0;
+    uint64_t total_queries  = 0;
+    uint64_t blocked_count  = 0;
+    uint64_t allowed_count  = 0;
+    uint64_t cached_count   = 0;
+    uint64_t error_count    = 0;
+    uint64_t nxdomain_count = 0; // Queries that returned NXDOMAIN from upstream
+    uint64_t servfail_count = 0; // Queries that returned SERVFAIL from upstream
 };
 
 // Thread-safe logger. Writes formatted log lines to stdout and optionally to a file.

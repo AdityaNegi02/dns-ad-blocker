@@ -100,3 +100,18 @@ CacheStats LRUCache::stats() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return stats_;
 }
+
+// ---------------------------------------------------------------------------
+// estimated_memory
+// ---------------------------------------------------------------------------
+// Approximates the heap memory used by all cache entries.
+// Per-entry cost: domain string + response bytes + 64 bytes of fixed overhead
+// (std::list node pointers, std::unordered_map bucket, std::chrono::time_point).
+size_t LRUCache::estimated_memory() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    size_t total = 0;
+    for (const auto& entry : entries_) {
+        total += entry.domain.size() + entry.response.size() + 64;
+    }
+    return total;
+}
