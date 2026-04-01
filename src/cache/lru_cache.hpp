@@ -52,6 +52,11 @@ public:
     // Return a snapshot of hit/miss/eviction counters
     CacheStats stats() const;
 
+    // Estimate the number of bytes currently occupied by cache entries.
+    // Each entry is approximated as: domain.size() + response.size() + 64 bytes
+    // of overhead (list node, map entry, time_point, allocator bookkeeping).
+    size_t estimated_memory() const;
+
 private:
     size_t max_size_;
     std::list<CacheEntry> entries_;                                    // MRU at front, LRU at back

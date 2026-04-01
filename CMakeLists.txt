@@ -56,3 +56,24 @@ add_executable(test_thread_pool
 )
 target_include_directories(test_thread_pool PRIVATE src/)
 target_link_libraries(test_thread_pool pthread)
+
+# ---- Sprint 3: Benchmark tool ----
+
+# dns_benchmark: standalone CLI tool for throughput and latency measurement
+add_executable(dns_benchmark
+    tools/benchmark.cpp
+    src/dns/dns_packet.cpp
+)
+target_include_directories(dns_benchmark PRIVATE src/)
+target_link_libraries(dns_benchmark pthread)
+
+# ---- Sprint 3: Benchmark utility tests ----
+
+# test_benchmark_utils: tests for query construction, percentiles, memory utils
+add_executable(test_benchmark_utils
+    tests/test_benchmark_utils.cpp
+    src/dns/dns_packet.cpp
+    src/utils/memory_stats.cpp
+)
+target_include_directories(test_benchmark_utils PRIVATE src/)
+target_link_libraries(test_benchmark_utils pthread)

@@ -23,6 +23,66 @@ Network-level DNS ad blocker written in C++. Blocks ads and trackers for every d
 
 ---
 
+## Performance
+
+### Running the Benchmark
+
+Build the project (see [Build Instructions](#build-instructions)), then run:
+
+```bash
+cd build
+
+# Default: 10,000 queries to 127.0.0.1:5353 with 4 threads
+./dns_benchmark
+
+# Custom target, query count, and concurrency
+./dns_benchmark --host 127.0.0.1 --port 5353 --queries 10000 --threads 4
+```
+
+**Sample output:**
+
+```
+=== DNS Ad Blocker Benchmark ===
+Target:     127.0.0.1:5353
+Queries:    10000 requested, 10000 completed
+Threads:    4
+Duration:   2.45 seconds
+
+Throughput: 4081 qps
+
+Latency (microseconds):
+  p50:  122
+  p90:  245
+  p95:  389
+  p99:  1024
+  max:  5123
+
+By type:
+  Blocked domains: 4167 queries, avg 95 µs
+  Allowed domains: 4166 queries, avg 312 µs
+  Cached  domains: 1667 queries, avg 45 µs
+```
+
+### Cache Hit-Rate Monitoring
+
+The server prints a stats summary every 30 seconds (configurable via `stats_interval` in `settings.conf`):
+
+```
+[INFO] [STATS] total=150 blocked=45 allowed=80 cached=20 nxdomain=3 servfail=2 | cache: size=65 hit_rate=75.2% evictions=0 | memory: cache=13.0 KB blocklist=512 B rss=8.3 MB
+```
+
+### Memory Usage Estimates
+
+The server estimates memory usage at each stats interval:
+
+| Component  | Estimate Method |
+|------------|----------------|
+| Cache      | `domain.size() + response.size() + 64` bytes per entry |
+| Blocklist  | `domain.size() + 64` bytes per entry |
+| Process RSS | `/proc/self/status` (Linux only) |
+
+---
+
 ## Architecture
 
 ```
@@ -143,6 +203,7 @@ cd build
 ./test_lru_cache
 ./test_integration
 ./test_thread_pool
+./test_benchmark_utils
 ```
 
 ---
@@ -153,7 +214,7 @@ cd build
 |------|--------|-------|
 | 1 | Foundation ✅ | DNS packet parsing, blocklist, LRU cache, logger, config, basic server |
 | 2 | Stability ✅ | Multi-query-type support (AAAA/MX/TXT/CNAME), NXDOMAIN pass-through, thread pool, whitelist, malformed packet recovery, integration tests |
-| 3 | Performance | Benchmarks, cache tuning, memory profiling |
+| 3 | Performance ✅ | Benchmarks (qps/p99 latency), cache hit-rate logging, memory profiling, socket tuning |
 | 4 | Features | Wildcard matching, statistics API, SIGHUP reload |
 | 5 | Polish | CLI interface, installer, documentation, packaging |
 

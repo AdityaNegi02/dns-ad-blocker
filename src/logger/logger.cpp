@@ -65,6 +65,10 @@ void Logger::log_query(const std::string& domain, const std::string& action,
         ++stats_.allowed_count;
     } else if (action == "CACHED") {
         ++stats_.cached_count;
+    } else if (action == "NXDOMAIN") {
+        ++stats_.nxdomain_count;
+    } else if (action == "SERVFAIL") {
+        ++stats_.servfail_count;
     } else if (action == "ERROR") {
         ++stats_.error_count;
     }

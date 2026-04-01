@@ -41,6 +41,11 @@ public:
     // Returns the number of entries in the whitelist
     size_t whitelist_size() const;
 
+    // Estimate the number of bytes used by the blocklist's internal storage.
+    // Approximation: sum of all stored domain strings + 64 bytes of overhead
+    // per entry (unordered_set node, hash bucket pointer).
+    size_t estimated_memory() const;
+
 private:
     std::unordered_set<std::string> blocked_domains_;
     std::unordered_set<std::string> whitelisted_domains_;

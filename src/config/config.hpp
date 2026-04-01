@@ -26,6 +26,7 @@ public:
     std::string log_level()       const; // default: "info"
     size_t      thread_count()    const; // default: 4
     std::string whitelist_path()  const; // default: "config/whitelist.txt"
+    uint32_t    stats_interval()  const; // default: 30 seconds
 
 private:
     std::unordered_map<std::string, std::string> settings_;
