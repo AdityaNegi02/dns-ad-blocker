@@ -18,6 +18,7 @@ public:
 
     // Typed accessors with default values
     uint16_t    port()            const; // default: 5353
+    uint16_t    api_port()        const; // default: 8080
     std::string upstream_dns()    const; // default: "8.8.8.8"
     uint16_t    upstream_port()   const; // default: 53
     std::string blocklist_path()  const; // default: "config/blocklist.txt"

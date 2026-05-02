@@ -8,7 +8,7 @@
 
 // Helper: write a temporary blocklist file and return its path.
 static std::string write_temp_blocklist(const std::string& contents) {
-    std::string path = "/tmp/test_blocklist_tmp.txt";
+    std::string path = "test_blocklist_tmp.txt";
     std::ofstream f(path);
     f << contents;
     return path;
@@ -96,11 +96,29 @@ static bool test_add_remove() {
 }
 
 // ---------------------------------------------------------------------------
+// Test 7: wildcard matching
+// ---------------------------------------------------------------------------
+static bool test_wildcard() {
+    auto path = write_temp_blocklist(
+        "*.tracker.com\n"
+        "ads.*.net\n"
+    );
+    Blocklist bl;
+    bl.load(path);
+    assert(bl.is_blocked("a.tracker.com"));
+    assert(bl.is_blocked("b.c.tracker.com"));
+    assert(bl.is_blocked("ads.example.net"));
+    assert(!bl.is_blocked("tracker.com")); // Because *.tracker.com implies something before .
+    assert(!bl.is_blocked("ads.com"));
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 int main() {
     int passed = 0;
-    int total  = 6;
+    int total  = 7;
 
     auto run = [&](const char* name, bool (*fn)()) {
         try {
@@ -122,6 +140,7 @@ int main() {
     run("test_subdomain",        test_subdomain);
     run("test_case_insensitive", test_case_insensitive);
     run("test_add_remove",       test_add_remove);
+    run("test_wildcard",         test_wildcard);
 
     std::cout << passed << "/" << total << " tests passed\n";
     return (passed == total) ? 0 : 1;

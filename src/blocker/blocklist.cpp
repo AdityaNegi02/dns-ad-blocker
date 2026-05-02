@@ -17,11 +17,29 @@ std::string Blocklist::normalize(const std::string& domain) {
 }
 
 // ---------------------------------------------------------------------------
+// compile_wildcard
+// ---------------------------------------------------------------------------
+std::regex Blocklist::compile_wildcard(const std::string& pattern) {
+    std::string regex_str = "^";
+    for (char c : pattern) {
+        if (c == '*') {
+            regex_str += ".*";
+        } else if (c == '.') {
+            regex_str += "\\.";
+        } else {
+            regex_str += c;
+        }
+    }
+    regex_str += "$";
+    return std::regex(regex_str, std::regex_constants::icase);
+}
+
+// ---------------------------------------------------------------------------
 // load_domains (private static helper)
 // ---------------------------------------------------------------------------
-// Shared logic for reading domains from a plain-text file into a set.
 bool Blocklist::load_domains(const std::string& filepath,
-                             std::unordered_set<std::string>& target) {
+                             std::unordered_set<std::string>& exact_target,
+                             std::vector<std::regex>& wildcard_target) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
         return false;
@@ -40,97 +58,144 @@ bool Blocklist::load_domains(const std::string& filepath,
         // Skip comment lines
         if (line.empty() || line[0] == '#') continue;
 
-        target.insert(normalize(line));
+        if (line.find('*') != std::string::npos) {
+            wildcard_target.push_back(compile_wildcard(line));
+        } else {
+            exact_target.insert(normalize(line));
+        }
     }
 
     return true;
 }
 
 // ---------------------------------------------------------------------------
+// clear
+// ---------------------------------------------------------------------------
+void Blocklist::clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    blocked_domains_.clear();
+    whitelisted_domains_.clear();
+    blocked_wildcards_.clear();
+    whitelisted_wildcards_.clear();
+}
+
+// ---------------------------------------------------------------------------
 // load
 // ---------------------------------------------------------------------------
-// Reads the file line by line. Lines starting with '#' or that are empty
-// (after whitespace trimming) are skipped. All other lines are added to the
-// blocked set after normalization.
 bool Blocklist::load(const std::string& filepath) {
-    return load_domains(filepath, blocked_domains_);
+    std::lock_guard<std::mutex> lock(mutex_);
+    return load_domains(filepath, blocked_domains_, blocked_wildcards_);
 }
 
 // ---------------------------------------------------------------------------
 // load_whitelist
 // ---------------------------------------------------------------------------
-// Same format as the blocklist file. Domains loaded here will never be blocked.
 bool Blocklist::load_whitelist(const std::string& filepath) {
-    return load_domains(filepath, whitelisted_domains_);
+    std::lock_guard<std::mutex> lock(mutex_);
+    return load_domains(filepath, whitelisted_domains_, whitelisted_wildcards_);
 }
 
 // ---------------------------------------------------------------------------
 // is_blocked
 // ---------------------------------------------------------------------------
-// Checks if `domain` or any parent domain is blocked and NOT whitelisted.
-// Whitelist check is done first at every level — if any level matches the
-// whitelist, the domain is considered allowed regardless of the blocklist.
-// E.g. "sub.ads.example.com" → checks "sub.ads.example.com", "ads.example.com",
-//      "example.com", "com".
 bool Blocklist::is_blocked(const std::string& domain) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::string check = normalize(domain);
 
-    while (true) {
-        // Whitelist takes priority: if any level is whitelisted, allow it
-        if (whitelisted_domains_.count(check)) {
+    // Whitelist wildcards
+    for (const auto& regex : whitelisted_wildcards_) {
+        if (std::regex_match(check, regex)) {
             return false;
         }
-        if (blocked_domains_.count(check)) {
+    }
+
+    // Whitelist exact/parent matching
+    std::string temp_check = check;
+    while (true) {
+        if (whitelisted_domains_.count(temp_check)) {
+            return false;
+        }
+        size_t dot_pos = temp_check.find('.');
+        if (dot_pos == std::string::npos) break;
+        temp_check = temp_check.substr(dot_pos + 1);
+    }
+
+    // Blocklist wildcards
+    for (const auto& regex : blocked_wildcards_) {
+        if (std::regex_match(check, regex)) {
             return true;
         }
-        // Strip the leftmost label to check the parent domain
-        size_t dot_pos = check.find('.');
-        if (dot_pos == std::string::npos) {
-            break; // No more parent domains to check
+    }
+
+    // Blocklist exact/parent matching
+    temp_check = check;
+    while (true) {
+        if (blocked_domains_.count(temp_check)) {
+            return true;
         }
-        check = check.substr(dot_pos + 1);
+        size_t dot_pos = temp_check.find('.');
+        if (dot_pos == std::string::npos) break;
+        temp_check = temp_check.substr(dot_pos + 1);
     }
 
     return false;
 }
 
 // ---------------------------------------------------------------------------
-// add / remove / size
+// add / remove / whitelist / unwhitelist
 // ---------------------------------------------------------------------------
 
 void Blocklist::add(const std::string& domain) {
-    blocked_domains_.insert(normalize(domain));
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (domain.find('*') != std::string::npos) {
+        blocked_wildcards_.push_back(compile_wildcard(domain));
+    } else {
+        blocked_domains_.insert(normalize(domain));
+    }
 }
 
 void Blocklist::remove(const std::string& domain) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Dynamically removing wildcards is complex with regex matching,
+    // so we only implement exact removal. In a real-world scenario,
+    // wildcards should ideally be kept in a map with their original string.
     blocked_domains_.erase(normalize(domain));
 }
 
 void Blocklist::whitelist(const std::string& domain) {
-    whitelisted_domains_.insert(normalize(domain));
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (domain.find('*') != std::string::npos) {
+        whitelisted_wildcards_.push_back(compile_wildcard(domain));
+    } else {
+        whitelisted_domains_.insert(normalize(domain));
+    }
 }
 
 void Blocklist::unwhitelist(const std::string& domain) {
+    std::lock_guard<std::mutex> lock(mutex_);
     whitelisted_domains_.erase(normalize(domain));
 }
 
 size_t Blocklist::size() const {
-    return blocked_domains_.size();
+    std::lock_guard<std::mutex> lock(mutex_);
+    return blocked_domains_.size() + blocked_wildcards_.size();
 }
 
 size_t Blocklist::whitelist_size() const {
-    return whitelisted_domains_.size();
+    std::lock_guard<std::mutex> lock(mutex_);
+    return whitelisted_domains_.size() + whitelisted_wildcards_.size();
 }
 
 // ---------------------------------------------------------------------------
 // estimated_memory
 // ---------------------------------------------------------------------------
-// Approximates the heap memory used by the blocked_domains_ set.
-// Per-entry cost: domain string length + 64 bytes for unordered_set node overhead.
 size_t Blocklist::estimated_memory() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     size_t total = 0;
     for (const auto& domain : blocked_domains_) {
         total += domain.size() + 64;
     }
+    // Very rough estimate for std::regex size
+    total += blocked_wildcards_.size() * 128;
     return total;
 }

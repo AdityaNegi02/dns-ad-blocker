@@ -77,3 +77,16 @@ add_executable(test_benchmark_utils
 )
 target_include_directories(test_benchmark_utils PRIVATE src/)
 target_link_libraries(test_benchmark_utils pthread)
+
+# ---- Installation and Packaging ----
+install(TARGETS dns-ad-blocker DESTINATION bin)
+install(FILES config/settings.conf DESTINATION /etc/dns-ad-blocker)
+install(FILES config/blocklist.txt config/whitelist.txt DESTINATION /etc/dns-ad-blocker)
+install(FILES dns-ad-blocker.service DESTINATION /etc/systemd/system)
+
+set(CPACK_PACKAGE_NAME "dns-ad-blocker")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Network-level DNS ad blocker")
+set(CPACK_GENERATOR "DEB;RPM;TGZ")
+include(CPack)
+

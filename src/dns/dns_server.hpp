@@ -21,7 +21,7 @@
 //  5. Periodically logs cache hit-rate and memory statistics.
 class DNSServer {
 public:
-    DNSServer(uint16_t port, Blocklist& blocklist, LRUCache& cache,
+    DNSServer(uint16_t port, uint16_t api_port, Blocklist& blocklist, LRUCache& cache,
               UpstreamResolver& resolver, Logger& logger,
               size_t thread_count = 4, uint32_t stats_interval_secs = 30);
 
@@ -40,8 +40,13 @@ private:
     // cache hit-rate, per-query-type counts, and memory usage.
     void stats_loop();
 
+    // Background thread: listens for HTTP GET /stats and returns JSON.
+    void api_loop();
+
     uint16_t          port_;
+    uint16_t          api_port_;
     int               socket_fd_;
+    int               api_socket_fd_;
     std::atomic<bool> running_;
 
     Blocklist&        blocklist_;
@@ -62,6 +67,7 @@ private:
     // ---- Stats reporting thread ----
     uint32_t          stats_interval_secs_; // How often to print stats (seconds)
     std::thread       stats_thread_;        // Background reporter thread
+    std::thread       api_thread_;          // API HTTP listener thread
     std::mutex        stats_cv_mutex_;      // Mutex for stats_cv_
     std::condition_variable stats_cv_;      // Woken by stop() to allow fast exit
 };

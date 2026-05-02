@@ -61,6 +61,10 @@ uint16_t Config::port() const {
     return static_cast<uint16_t>(std::stoul(get("port", "5353")));
 }
 
+uint16_t Config::api_port() const {
+    return static_cast<uint16_t>(std::stoul(get("api_port", "8080")));
+}
+
 std::string Config::upstream_dns() const {
     return get("upstream_dns", "8.8.8.8");
 }

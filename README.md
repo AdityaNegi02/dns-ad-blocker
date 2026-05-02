@@ -142,35 +142,41 @@ Devices on your network
 git clone https://github.com/AdityaNegi02/dns-ad-blocker.git
 cd dns-ad-blocker
 
-# Create build directory and configure
-mkdir build && cd build
-cmake ..
+ Here are the step-by-step commands to run it using WSL:
 
-# Build the project
-make -j$(nproc)
-```
+  Step 1: Open WSL
+  Open your terminal (PowerShell) and enter your Ubuntu environment:
+   1 wsl
 
----
+  Step 2: Navigate to the project
+  Once inside the WSL shell, navigate to the project folder (Windows drives are mounted under /mnt/):
 
-## Usage
+   1 cd /mnt/c/Users/adity/OneDrive/Desktop/dns-ad-blocker
 
-```bash
-# Run with default config
-sudo ./dns-ad-blocker
+  Step 3: Build using CMake
+  Now use the Linux build tools that are already installed in your WSL:
 
-# Run with a custom config file
-sudo ./dns-ad-blocker --config /path/to/settings.conf
+   1 mkdir -p build && cd build
+   2 cmake ..
+   3 make -j4
 
-# Run on a custom port (overrides config)
-sudo ./dns-ad-blocker --port 5353
+  Step 4: Run the server
+  Run the compiled binary using sudo because it's a network service):
+   1 sudo ./dns-ad-blocker
+  You should see the ASCII banner and the "server started" message.
 
-# Test with dig (replace 127.0.0.1 with server IP)
-dig @127.0.0.1 -p 5353 example.com
-dig @127.0.0.1 -p 5353 ads.google.com   # should return 0.0.0.0
-```
+  Step 5: Test it
+  While the server is running in the first terminal, open another terminal window and run:
 
----
+   1 # Test a normal domain
+   2 dig @127.0.0.1 -p 5353 google.com
+   3
+   4 # Test a blocked domain (e.g., from your blocklist.txt)
+   5 dig @127.0.0.1 -p 5353 doubleclick.net
 
+  Step 6: Check the Statistics API
+  Open your browser on Windows and go to:
+  http://localhost:8080/stats
 ## Configuration
 
 Edit `config/settings.conf`:
@@ -215,8 +221,8 @@ cd build
 | 1 | Foundation ✅ | DNS packet parsing, blocklist, LRU cache, logger, config, basic server |
 | 2 | Stability ✅ | Multi-query-type support (AAAA/MX/TXT/CNAME), NXDOMAIN pass-through, thread pool, whitelist, malformed packet recovery, integration tests |
 | 3 | Performance ✅ | Benchmarks (qps/p99 latency), cache hit-rate logging, memory profiling, socket tuning |
-| 4 | Features | Wildcard matching, statistics API, SIGHUP reload |
-| 5 | Polish | CLI interface, installer, documentation, packaging |
+| 4 | Features ✅ | Wildcard matching, statistics API, SIGHUP reload |
+| 5 | Polish ✅ | CLI interface, installer, documentation, packaging |
 
 ---
 

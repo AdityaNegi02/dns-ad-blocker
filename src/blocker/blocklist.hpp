@@ -1,6 +1,10 @@
 #pragma once
 #include <string>
 #include <unordered_set>
+#include <vector>
+#include <regex>
+#include <shared_mutex>
+#include <mutex>
 
 // Blocklist: stores a set of blocked domains and provides fast lookup.
 // Supports exact match as well as parent-domain matching so that subdomains
@@ -17,6 +21,9 @@ public:
     // Load whitelist domains from a plain-text file (same format as blocklist).
     // Returns true on success, false if the file could not be opened.
     bool load_whitelist(const std::string& filepath);
+
+    // Clears all existing domains.
+    void clear();
 
     // Returns true if `domain` or any of its parent domains are in the blocklist
     // AND none of them are in the whitelist.
@@ -49,11 +56,20 @@ public:
 private:
     std::unordered_set<std::string> blocked_domains_;
     std::unordered_set<std::string> whitelisted_domains_;
+    
+    std::vector<std::regex> blocked_wildcards_;
+    std::vector<std::regex> whitelisted_wildcards_;
+    
+    mutable std::mutex mutex_; // Protects concurrent access
 
     // Convert domain to lowercase for case-insensitive matching
     static std::string normalize(const std::string& domain);
 
+    // Compile a wildcard string into a std::regex
+    static std::regex compile_wildcard(const std::string& pattern);
+
     // Load domains from a file into a given set (shared logic for load/load_whitelist)
     static bool load_domains(const std::string& filepath,
-                             std::unordered_set<std::string>& target);
+                             std::unordered_set<std::string>& exact_target,
+                             std::vector<std::regex>& wildcard_target);
 };

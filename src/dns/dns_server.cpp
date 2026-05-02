@@ -13,11 +13,13 @@
 #include <stdexcept>
 #include <vector>
 
-DNSServer::DNSServer(uint16_t port, Blocklist& blocklist, LRUCache& cache,
+DNSServer::DNSServer(uint16_t port, uint16_t api_port, Blocklist& blocklist, LRUCache& cache,
                      UpstreamResolver& resolver, Logger& logger,
                      size_t thread_count, uint32_t stats_interval_secs)
     : port_(port),
+      api_port_(api_port),
       socket_fd_(-1),
+      api_socket_fd_(-1),
       running_(false),
       blocklist_(blocklist),
       cache_(cache),
@@ -66,6 +68,9 @@ void DNSServer::start() {
     // Launch background stats reporter thread
     stats_thread_ = std::thread(&DNSServer::stats_loop, this);
 
+    // Launch API thread
+    api_thread_ = std::thread(&DNSServer::api_loop, this);
+
     // ---- Task 4: Use 4096-byte buffer for EDNS0 support ----
     // Standard DNS uses 512 bytes; EDNS0 allows up to 4096.
     uint8_t buffer[4096];
@@ -104,10 +109,19 @@ void DNSServer::stop() {
         close(socket_fd_);
         socket_fd_ = -1;
     }
+    
+    if (api_socket_fd_ >= 0) {
+        close(api_socket_fd_);
+        api_socket_fd_ = -1;
+    }
 
     // Join the stats thread before shutting down the thread pool
     if (stats_thread_.joinable()) {
         stats_thread_.join();
+    }
+    
+    if (api_thread_.joinable()) {
+        api_thread_.join();
     }
 
     // Drain in-progress tasks before returning
@@ -271,5 +285,99 @@ void DNSServer::stats_loop() {
             << " rss=" << utils::format_bytes(rss_bytes);
 
         logger_.log_info("[STATS] " + msg.str());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// api_loop
+// ---------------------------------------------------------------------------
+void DNSServer::api_loop() {
+    api_socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (api_socket_fd_ < 0) return;
+    
+    int opt = 1;
+    setsockopt(api_socket_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(api_port_);
+
+    if (bind(api_socket_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        close(api_socket_fd_);
+        api_socket_fd_ = -1;
+        return;
+    }
+
+    if (listen(api_socket_fd_, 10) < 0) {
+        close(api_socket_fd_);
+        api_socket_fd_ = -1;
+        return;
+    }
+
+    logger_.log_info("Stats API server listening on port " + std::to_string(api_port_));
+
+    while (running_) {
+        struct sockaddr_in client_addr{};
+        socklen_t client_len = sizeof(client_addr);
+        int client_fd = accept(api_socket_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &client_len);
+        
+        if (client_fd < 0) {
+            if (!running_) break;
+            continue;
+        }
+
+        // Just read a bit to clear the request (we assume it's GET /stats)
+        char buffer[1024];
+        ssize_t bytes_read = recv(client_fd, buffer, sizeof(buffer)-1, 0);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+        }
+
+        // Prepare JSON stats
+        CacheStats cs = cache_.stats();
+        QueryStats qs = logger_.get_stats();
+        size_t cache_size = cache_.size();
+        uint64_t total_lookups = cs.hits + cs.misses;
+        double hit_rate = (total_lookups > 0) ? static_cast<double>(cs.hits) / static_cast<double>(total_lookups) * 100.0 : 0.0;
+
+        std::ostringstream json;
+        json << "{\n"
+             << "  \"queries\": {\n"
+             << "    \"total\": " << qs.total_queries << ",\n"
+             << "    \"blocked\": " << qs.blocked_count << ",\n"
+             << "    \"allowed\": " << qs.allowed_count << ",\n"
+             << "    \"cached\": " << qs.cached_count << ",\n"
+             << "    \"nxdomain\": " << qs.nxdomain_count << ",\n"
+             << "    \"servfail\": " << qs.servfail_count << "\n"
+             << "  },\n"
+             << "  \"cache\": {\n"
+             << "    \"size\": " << cache_size << ",\n"
+             << "    \"hit_rate_percent\": " << std::fixed << std::setprecision(1) << hit_rate << ",\n"
+             << "    \"evictions\": " << cs.evictions << ",\n"
+             << "    \"memory_bytes\": " << cache_.estimated_memory() << "\n"
+             << "  },\n"
+             << "  \"blocklist\": {\n"
+             << "    \"size\": " << blocklist_.size() << ",\n"
+             << "    \"whitelist_size\": " << blocklist_.whitelist_size() << ",\n"
+             << "    \"memory_bytes\": " << blocklist_.estimated_memory() << "\n"
+             << "  },\n"
+             << "  \"system\": {\n"
+             << "    \"rss_bytes\": " << utils::get_rss_bytes() << "\n"
+             << "  }\n"
+             << "}\n";
+             
+        std::string json_str = json.str();
+        std::ostringstream http;
+        http << "HTTP/1.1 200 OK\r\n"
+             << "Content-Type: application/json\r\n"
+             << "Connection: close\r\n"
+             << "Content-Length: " << json_str.size() << "\r\n"
+             << "\r\n"
+             << json_str;
+             
+        std::string http_str = http.str();
+        send(client_fd, http_str.data(), http_str.size(), 0);
+        close(client_fd);
     }
 }

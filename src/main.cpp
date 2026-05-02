@@ -12,11 +12,25 @@
 
 // Global server pointer so signal handlers can call stop()
 static DNSServer* g_server = nullptr;
+static Blocklist* g_blocklist = nullptr;
+static Config* g_config = nullptr;
 
 // SIGINT / SIGTERM handler — triggers graceful shutdown
 static void signal_handler(int /*signum*/) {
     if (g_server) {
         g_server->stop();
+    }
+}
+
+// SIGHUP handler — reloads blocklist and whitelist dynamically
+static void reload_handler(int /*signum*/) {
+    if (g_blocklist && g_config) {
+        std::cout << "\n[INFO] SIGHUP received. Reloading blocklist and whitelist...\n";
+        g_blocklist->clear();
+        g_blocklist->load(g_config->blocklist_path());
+        g_blocklist->load_whitelist(g_config->whitelist_path());
+        std::cout << "[INFO] Reload complete: " << g_blocklist->size() << " blocked, " 
+                  << g_blocklist->whitelist_size() << " whitelisted domains.\n";
     }
 }
 
@@ -92,12 +106,17 @@ int main(int argc, char* argv[]) {
     Logger           logger(log_path);
     LRUCache         cache(cache_sz);
     UpstreamResolver resolver(upstream, up_port);
-    DNSServer        server(port, blocklist, cache, resolver, logger, thread_count, stats_interval);
+    DNSServer        server(port, config.api_port(), blocklist, cache, resolver, logger, thread_count, stats_interval);
 
     // --- Register signal handlers ---
     g_server = &server;
+    g_blocklist = &blocklist;
+    g_config = &config;
     std::signal(SIGINT,  signal_handler);
     std::signal(SIGTERM, signal_handler);
+#ifdef SIGHUP
+    std::signal(SIGHUP, reload_handler);
+#endif
 
     std::cout << "[INFO] Server listening on port " << port << " — press Ctrl+C to stop\n\n";
 

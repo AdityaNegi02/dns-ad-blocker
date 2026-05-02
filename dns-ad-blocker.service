@@ -1,0 +1,14 @@
+[Unit]
+Description=DNS Ad Blocker
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/dns-ad-blocker --config /etc/dns-ad-blocker/settings.conf
+Restart=always
+User=root
+WorkingDirectory=/etc/dns-ad-blocker
+# Forward SIGHUP to the process to trigger blocklist reload
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
