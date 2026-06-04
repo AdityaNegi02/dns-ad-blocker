@@ -13,6 +13,68 @@
 #include <stdexcept>
 #include <vector>
 
+// --- Embedded Dashboard HTML ---
+static constexpr const char* DASHBOARD_HTML = R"(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS Ad Blocker | Dashboard</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #38bdf8; --blocked: #ef4444; --allowed: #10b981; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid var(--card); padding-bottom: 1rem; }
+        h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+        .card { background: var(--card); padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .label { font-size: 0.875rem; opacity: 0.7; margin-bottom: 0.5rem; }
+        .value { font-size: 1.5rem; font-weight: bold; }
+        .blocked { color: var(--blocked); }
+        .allowed { color: var(--allowed); }
+        .footer { margin-top: 3rem; font-size: 0.75rem; opacity: 0.5; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ DNS Ad Blocker</h1>
+            <div id="status" style="font-size: 0.8rem; color: var(--allowed)">● Live</div>
+        </header>
+        <div class="grid">
+            <div class="card"><div class="label">Total Queries</div><div id="total" class="value">-</div></div>
+            <div class="card"><div class="label">Blocked</div><div id="blocked" class="value blocked">-</div></div>
+            <div class="card"><div class="label">Cache Hit Rate</div><div id="hit_rate" class="value">-</div></div>
+            <div class="card"><div class="label">Memory (RSS)</div><div id="rss" class="value">-</div></div>
+        </div>
+        <div class="footer">Refreshing every 2 seconds</div>
+    </div>
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        async function update() {
+            try {
+                const res = await fetch('/stats');
+                const data = await res.json();
+                document.getElementById('total').textContent = data.queries.total.toLocaleString();
+                document.getElementById('blocked').textContent = data.queries.blocked.toLocaleString();
+                document.getElementById('hit_rate').textContent = data.cache.hit_rate_percent.toFixed(1) + '%';
+                document.getElementById('rss').textContent = formatBytes(data.system.rss_bytes);
+            } catch (e) { console.error('Update failed', e); }
+        }
+        setInterval(update, 2000);
+        update();
+    </script>
+</body>
+</html>
+)";
+
 DNSServer::DNSServer(uint16_t port, uint16_t api_port, Blocklist& blocklist, LRUCache& cache,
                      UpstreamResolver& resolver, Logger& logger,
                      size_t thread_count, uint32_t stats_interval_secs)
@@ -334,47 +396,61 @@ void DNSServer::api_loop() {
             buffer[bytes_read] = '\0';
         }
 
-        // Prepare JSON stats
-        CacheStats cs = cache_.stats();
-        QueryStats qs = logger_.get_stats();
-        size_t cache_size = cache_.size();
-        uint64_t total_lookups = cs.hits + cs.misses;
-        double hit_rate = (total_lookups > 0) ? static_cast<double>(cs.hits) / static_cast<double>(total_lookups) * 100.0 : 0.0;
+        // Simple routing: if the request contains "/stats", return JSON.
+        // Otherwise, return the HTML dashboard.
+        std::string request(buffer);
+        bool is_stats = (request.find("GET /stats") != std::string::npos);
 
-        std::ostringstream json;
-        json << "{\n"
-             << "  \"queries\": {\n"
-             << "    \"total\": " << qs.total_queries << ",\n"
-             << "    \"blocked\": " << qs.blocked_count << ",\n"
-             << "    \"allowed\": " << qs.allowed_count << ",\n"
-             << "    \"cached\": " << qs.cached_count << ",\n"
-             << "    \"nxdomain\": " << qs.nxdomain_count << ",\n"
-             << "    \"servfail\": " << qs.servfail_count << "\n"
-             << "  },\n"
-             << "  \"cache\": {\n"
-             << "    \"size\": " << cache_size << ",\n"
-             << "    \"hit_rate_percent\": " << std::fixed << std::setprecision(1) << hit_rate << ",\n"
-             << "    \"evictions\": " << cs.evictions << ",\n"
-             << "    \"memory_bytes\": " << cache_.estimated_memory() << "\n"
-             << "  },\n"
-             << "  \"blocklist\": {\n"
-             << "    \"size\": " << blocklist_.size() << ",\n"
-             << "    \"whitelist_size\": " << blocklist_.whitelist_size() << ",\n"
-             << "    \"memory_bytes\": " << blocklist_.estimated_memory() << "\n"
-             << "  },\n"
-             << "  \"system\": {\n"
-             << "    \"rss_bytes\": " << utils::get_rss_bytes() << "\n"
-             << "  }\n"
-             << "}\n";
+        std::string response_body;
+        std::string content_type;
+
+        if (is_stats) {
+            // Prepare JSON stats
+            CacheStats cs = cache_.stats();
+            QueryStats qs = logger_.get_stats();
+            size_t cache_size = cache_.size();
+            uint64_t total_lookups = cs.hits + cs.misses;
+            double hit_rate = (total_lookups > 0) ? static_cast<double>(cs.hits) / static_cast<double>(total_lookups) * 100.0 : 0.0;
+
+            std::ostringstream json;
+            json << "{\n"
+                 << "  \"queries\": {\n"
+                 << "    \"total\": " << qs.total_queries << ",\n"
+                 << "    \"blocked\": " << qs.blocked_count << ",\n"
+                 << "    \"allowed\": " << qs.allowed_count << ",\n"
+                 << "    \"cached\": " << qs.cached_count << ",\n"
+                 << "    \"nxdomain\": " << qs.nxdomain_count << ",\n"
+                 << "    \"servfail\": " << qs.servfail_count << "\n"
+                 << "  },\n"
+                 << "  \"cache\": {\n"
+                 << "    \"size\": " << cache_size << ",\n"
+                 << "    \"hit_rate_percent\": " << std::fixed << std::setprecision(1) << hit_rate << ",\n"
+                 << "    \"evictions\": " << cs.evictions << ",\n"
+                 << "    \"memory_bytes\": " << cache_.estimated_memory() << "\n"
+                 << "  },\n"
+                 << "  \"blocklist\": {\n"
+                 << "    \"size\": " << blocklist_.size() << ",\n"
+                 << "    \"whitelist_size\": " << blocklist_.whitelist_size() << ",\n"
+                 << "    \"memory_bytes\": " << blocklist_.estimated_memory() << "\n"
+                 << "  },\n"
+                 << "  \"system\": {\n"
+                 << "    \"rss_bytes\": " << utils::get_rss_bytes() << "\n"
+                 << "  }\n"
+                 << "}\n";
+            response_body = json.str();
+            content_type  = "application/json";
+        } else {
+            response_body = DASHBOARD_HTML;
+            content_type  = "text/html";
+        }
              
-        std::string json_str = json.str();
         std::ostringstream http;
         http << "HTTP/1.1 200 OK\r\n"
-             << "Content-Type: application/json\r\n"
+             << "Content-Type: " << content_type << "\r\n"
              << "Connection: close\r\n"
-             << "Content-Length: " << json_str.size() << "\r\n"
+             << "Content-Length: " << response_body.size() << "\r\n"
              << "\r\n"
-             << json_str;
+             << response_body;
              
         std::string http_str = http.str();
         send(client_fd, http_str.data(), http_str.size(), 0);

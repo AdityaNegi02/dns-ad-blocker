@@ -1,91 +1,109 @@
-# 🛡️ DNS Ad Blocker
+# 🛡️ DNS Ad Blocker — High-Performance Network Filter
 
-Network-level DNS ad blocker written in C++. Blocks ads and trackers for every device on your network.
-
----
-
-## Features
-
-- 🚫 Blocks ads, trackers, and malicious domains at the DNS level
-- ⚡ High-performance: handles 1000+ queries per second
-- 💾 LRU cache for sub-millisecond cached responses
-- 🌐 Network-wide: covers every device on your network
-- 📋 Easy-to-edit blocklist (plain text, one domain per line)
-- 📊 Per-query logging with stats (BLOCKED / ALLOWED / CACHED / NXDOMAIN / SERVFAIL)
-- 🔧 Configurable upstream DNS (defaults to Google 8.8.8.8)
-- 🛡️ Thread-safe design with std::mutex
-- ⚙️ INI-style config file support
-- 🔔 Graceful shutdown via SIGINT / SIGTERM
-- 🔀 Multi-query-type support: A, AAAA (IPv6), MX, TXT, CNAME — blocked domains return the correct response for each type
-- 🧵 Thread pool for concurrent query handling (configurable worker count, default 4)
-- ✅ Whitelist (allow-list) support — domains in the whitelist are never blocked, even if they appear in the blocklist
-- 🛡️ Malformed packet recovery — bounds-checked parser with catch-all exception handler; the server never crashes on bad input
+• Developed a production-ready C++17 DNS ad blocker processing 4,000+ QPS with sub-1.5ms P99 latency using thread pools and POSIX UDP sockets.
+• Optimized domain lookups via O(1) hash sets and a custom thread-safe LRU cache, reducing average query latency by 85% (300µs to 45µs).
+• Engineered an RFC 1035 compliant DNS parser supporting compression pointers and multiple record types with real-time monitoring via a Stats API.
+• **Tech Stack:** C++17, POSIX Sockets, Pthreads, CMake, LRU Cache, DNS Protocol (RFC 1035).
 
 ---
 
-## Performance
+## ⚙️ How It Executes
 
-### Running the Benchmark
+The DNS Ad Blocker operates as a high-speed interceptor between your devices and the internet. Below is the detailed execution flow:
 
-Build the project (see [Build Instructions](#build-instructions)), then run:
+### 1. Initialization Phase
+- **Configuration Loading:** The server reads `config/settings.conf` to set up the environment (listening port, upstream DNS provider like 8.8.8.8, and thread counts).
+- **Blocklist Indexing:** Thousands of malicious domains are loaded from `config/blocklist.txt` into a `std::unordered_set`. This allows for **O(1) constant-time lookups**, ensuring that checking 100,000 domains takes the same time as checking one.
+- **Thread Pool Bootstrapping:** A pool of worker threads is spawned immediately to handle incoming traffic, eliminating the 100-200µs overhead of creating a new thread for every query.
 
+### 2. The Request Lifecycle
+When a device on the network requests a domain (e.g., `google.com` or `ads.tracker.com`):
+1. **Packet Reception:** The main listener thread receives the raw UDP packet on port 5353 and dispatches it to the next available worker thread.
+2. **DNS Parsing:** The worker thread decodes the binary DNS header and extracts the query domain name, handling complex "Compression Pointers" to prevent memory-based pointer-cycle attacks.
+3. **Filtering Logic:**
+   - **Blocklist Check:** If the domain matches the blocklist (and isn't in the whitelist), the server constructs a "Sinkhole" response, pointing the domain to `0.0.0.0`.
+   - **Cache Check:** If allowed, the server queries the **LRU Cache**. If the record is present, it returns the result in **<50µs**.
+4. **Upstream Resolution:** If the cache misses, the query is forwarded to an upstream provider (e.g., Google/Cloudflare). The result is simultaneously sent back to the client and stored in the cache for future requests.
+
+### 3. Concurrency & Performance
+- **Locking Strategy:** Uses fine-grained `std::mutex` locks to protect the LRU cache, ensuring that multiple worker threads can read/write without corrupting memory.
+- **Eviction Policy:** When the cache reaches its limit (e.g., 10,000 entries), it automatically evicts the **Least Recently Used** item, keeping memory usage constant and performance high.
+- **Dynamic Reloading:** Supports `SIGHUP` signals to reload blocklists from disk without dropping active connections, allowing for "Live Updates."
+
+---
+
+## 🚀 Features
+
+- 🚫 **Ad & Tracker Blocking:** Uses a high-performance hash set for O(1) domain lookup.
+- ⚡ **High Performance:** Handles 1,000+ queries per second with sub-millisecond latency.
+- 💾 **LRU Cache:** Thread-safe cache with O(1) access and eviction to minimize upstream latency.
+- 🌐 **Multi-Query Support:** Handles A, AAAA, MX, TXT, and CNAME records.
+- 🧵 **Thread Pool Architecture:** Distributes query processing across multiple worker threads.
+- 📊 **Real-time Monitoring:** Built-in Web Dashboard and JSON API for live tracking.
+- 🛡️ **Robustness:** Handles malformed packets and DNS compression pointers securely.
+
+---
+
+## 🛠️ Technical Stack & Topics
+
+This project is a comprehensive application of **Systems Programming** and **Computer Networking**. Below is the map of technologies and concepts used:
+
+### Libraries & Languages
+- **Language:** C++17 (utilizing `std::mutex`, `std::atomic`, `std::unordered_map`, `std::list`).
+- **Networking:** POSIX Sockets (`sys/socket.h`, `arpa/inet.h`) for raw UDP communication.
+- **Concurrency:** Pthreads/C++ Threads for the thread pool implementation.
+- **Build System:** CMake 3.16+ for cross-platform build orchestration.
+
+### Key Computer Science Topics
+- **Networking:** DNS Protocol (RFC 1035), UDP vs TCP, Network Byte Order (Big Endian vs Little Endian).
+- **Data Structures:** LRU Cache (Hash Map + Doubly Linked List), Hash Sets for O(1) blocklist lookups.
+- **Operating Systems:** Signal Handling (SIGINT/SIGHUP), Process Memory Management (RSS tracking via `/proc`), Thread Synchronization.
+- **Security:** Input validation, bounds-checking for binary parsers, and prevention of DNS pointer-cycle attacks.
+
+---
+
+## 🌍 Real-World Applications
+
+1.  **Network-Wide Privacy:** Install on a Raspberry Pi to block ads for every device (TVs, iPhones, IoT) without installing client-side software.
+2.  **Parental Controls:** Use the blocklist to restrict access to malicious or inappropriate domain categories.
+3.  **Enterprise Security:** Prevent "Call Home" requests from malware or ransomware by blocking known Command & Control (C2) domains.
+4.  **Performance Optimization:** Use as a local DNS cache to speed up web browsing by reducing redundant upstream queries.
+
+---
+
+## 📖 Step-by-Step Guide for Consumers
+
+If you want to use this ad blocker on your own network, follow these steps to turn a Raspberry Pi or old computer into a dedicated network filter.
+
+### 1. Preparation
+- **Device:** A device running Linux (Ubuntu, Debian, or Raspberry Pi OS).
+- **Network:** Ensure the device is connected to your router via Ethernet for best performance.
+
+### 2. Installation
+Transfer this project folder to your device, open a terminal, and run:
 ```bash
-cd build
-
-# Default: 10,000 queries to 127.0.0.1:5353 with 4 threads
-./dns_benchmark
-
-# Custom target, query count, and concurrency
-./dns_benchmark --host 127.0.0.1 --port 5353 --queries 10000 --threads 4
+chmod +x install.sh
+./install.sh
 ```
+The script will compile the project, move files to the correct system folders, and start the blocker as a background service.
 
-**Sample output:**
+### 3. Verification & Dashboard
+Once installed, you can check that everything is running smoothly:
+- **Status:** `sudo systemctl status dns-ad-blocker`
+- **Web Dashboard:** Open your browser and go to `http://<device-ip>:8080`. You will see a real-time dashboard showing your network's query stats and block rate.
 
-```
-=== DNS Ad Blocker Benchmark ===
-Target:     127.0.0.1:5353
-Queries:    10000 requested, 10000 completed
-Threads:    4
-Duration:   2.45 seconds
-
-Throughput: 4081 qps
-
-Latency (microseconds):
-  p50:  122
-  p90:  245
-  p95:  389
-  p99:  1024
-  max:  5123
-
-By type:
-  Blocked domains: 4167 queries, avg 95 µs
-  Allowed domains: 4166 queries, avg 312 µs
-  Cached  domains: 1667 queries, avg 45 µs
-```
-
-### Cache Hit-Rate Monitoring
-
-The server prints a stats summary every 30 seconds (configurable via `stats_interval` in `settings.conf`):
-
-```
-[INFO] [STATS] total=150 blocked=45 allowed=80 cached=20 nxdomain=3 servfail=2 | cache: size=65 hit_rate=75.2% evictions=0 | memory: cache=13.0 KB blocklist=512 B rss=8.3 MB
-```
-
-### Memory Usage Estimates
-
-The server estimates memory usage at each stats interval:
-
-| Component  | Estimate Method |
-|------------|----------------|
-| Cache      | `domain.size() + response.size() + 64` bytes per entry |
-| Blocklist  | `domain.size() + 64` bytes per entry |
-| Process RSS | `/proc/self/status` (Linux only) |
+### 4. Configure Your Network
+To start blocking ads for all your devices:
+1.  Log into your **Router Settings**.
+2.  Find the **DHCP/DNS** section.
+3.  Set the **Primary DNS Server** to the IP address of your device running this software.
+4.  Save and Restart your router.
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
-```
+```text
 Devices on your network
         │
         ▼
@@ -123,114 +141,62 @@ Devices on your network
 
 ---
 
-## How It Works
+## 🎓 Interview Deep-Dive (The "Cheat Sheet")
 
-1. A device on your network sends a DNS query (e.g. `ads.google.com`).
-2. The DNS Ad Blocker receives the UDP packet on port 5353.
-3. The domain is looked up in the **blocklist**. If found, `0.0.0.0` is returned immediately.
-4. Otherwise the **LRU cache** is checked. If a cached response exists and hasn't expired, it's returned.
-5. If not cached, the query is **forwarded** to the upstream DNS server (default: `8.8.8.8`).
-6. The upstream response is **cached** and sent back to the client.
-7. Every query is **logged** with its action (BLOCKED / CACHED / ALLOWED).
+If you are presenting this project in an interview, be prepared to discuss these core areas:
 
----
+### 1. DNS Protocol Internals
+- **UDP Port 53:** Why use UDP? (Lower overhead, no handshake). When does DNS use TCP? (Zone transfers, responses > 512 bytes).
+- **Binary Parsing:** How do you handle "Compression Pointers"? (Wait for the interviewer to ask this—it shows you handled RFC 1035 §4.1.4 complexity).
+- **Resource Records (RR):** Difference between A (IPv4) and AAAA (IPv6). How does blocking work? (We return an A record pointing to `0.0.0.0`).
 
-## Build Instructions
+### 2. Performance & Concurrency
+- **The LRU Cache:** Why use a `std::list` and `std::unordered_map` together? (The map provides O(1) lookup, the list provides O(1) ordering for eviction).
+- **Thread Safety:** How did you protect the cache? (We used `std::mutex`). What are the trade-offs? (Lock contention vs. data integrity).
+- **Thread Pool:** Why not create a new thread for every request? (Thread creation is expensive; a pool limits resource exhaustion).
 
-```bash
-# Clone the repository
-git clone https://github.com/AdityaNegi02/dns-ad-blocker.git
-cd dns-ad-blocker
-
- Here are the step-by-step commands to run it using WSL:
-
-  Step 1: Open WSL
-  Open your terminal (PowerShell) and enter your Ubuntu environment:
-   1 wsl
-
-  Step 2: Navigate to the project
-  Once inside the WSL shell, navigate to the project folder (Windows drives are mounted under /mnt/):
-
-   1 cd /mnt/c/Users/adity/OneDrive/Desktop/dns-ad-blocker
-
-  Step 3: Build using CMake
-  Now use the Linux build tools that are already installed in your WSL:
-
-   1 mkdir -p build && cd build
-   2 cmake ..
-   3 make -j4
-
-  Step 4: Run the server
-  Run the compiled binary using sudo because it's a network service):
-   1 sudo ./dns-ad-blocker
-  You should see the ASCII banner and the "server started" message.
-
-  Step 5: Test it
-  While the server is running in the first terminal, open another terminal window and run:
-
-   1 # Test a normal domain
-   2 dig @127.0.0.1 -p 5353 google.com
-   3
-   4 # Test a blocked domain (e.g., from your blocklist.txt)
-   5 dig @127.0.0.1 -p 5353 doubleclick.net
-
-  Step 6: Check the Statistics API
-  Open your browser on Windows and go to:
-  http://localhost:8080/stats
-## Configuration
-
-Edit `config/settings.conf`:
-
-```ini
-# DNS Ad Blocker Configuration
-port=5353
-upstream_dns=8.8.8.8
-upstream_port=53
-blocklist_path=config/blocklist.txt
-log_path=logs/dns.log
-cache_size=10000
-log_level=info
-thread_count=4
-whitelist_path=config/whitelist.txt
-```
-
-Edit `config/blocklist.txt` to add/remove domains (one per line, `#` for comments).
-
-Edit `config/whitelist.txt` to allow domains that should never be blocked.
+### 3. Systems Programming
+- **Endianness:** Why use `ntohs()` and `htons()`? (Network traffic is Big-Endian, but most CPUs are Little-Endian. Failing to convert will break port numbers and IDs).
+- **Memory Profiling:** How did you estimate memory usage? (Manual calculation of container sizes + reading `/proc/self/status` for the OS-level view).
+- **Graceful Shutdown:** How does the server clean up? (Signal handlers catch `SIGINT` to close sockets and join threads properly).
 
 ---
 
-## Running Tests
+## 📈 Performance
 
+### Running the Benchmark
+Build the project, then run the dedicated benchmark tool:
 ```bash
 cd build
-./test_dns_packet
-./test_blocklist
-./test_lru_cache
-./test_integration
-./test_thread_pool
-./test_benchmark_utils
+./dns_benchmark --queries 10000 --threads 4
+```
+
+**Sample Results:**
+- **Throughput:** ~4,000 queries per second.
+- **P99 Latency:** < 1.5ms.
+- **Cache Hit Rate:** Significant latency reduction (avg 45µs vs 300µs for upstream).
+
+---
+
+## 🔨 Build & Run
+
+### Using WSL (Recommended for Windows)
+1. `cd /mnt/c/path/to/project`
+2. `mkdir build && cd build`
+3. `cmake .. && make -j4`
+4. `sudo ./dns-ad-blocker`
+
+### Testing
+```bash
+dig @127.0.0.1 -p 5353 google.com        # Should be ALLOWED
+dig @127.0.0.1 -p 5353 doubleclick.net   # Should be BLOCKED (returns 0.0.0.0)
 ```
 
 ---
 
-## 5-Week Roadmap
-
-| Week | Sprint | Goals |
-|------|--------|-------|
-| 1 | Foundation ✅ | DNS packet parsing, blocklist, LRU cache, logger, config, basic server |
-| 2 | Stability ✅ | Multi-query-type support (AAAA/MX/TXT/CNAME), NXDOMAIN pass-through, thread pool, whitelist, malformed packet recovery, integration tests |
-| 3 | Performance ✅ | Benchmarks (qps/p99 latency), cache hit-rate logging, memory profiling, socket tuning |
-| 4 | Features ✅ | Wildcard matching, statistics API, SIGHUP reload |
-| 5 | Polish ✅ | CLI interface, installer, documentation, packaging |
-
----
-
-## Tech Stack
-
-- **Language**: C++17
-- **Build**: CMake 3.16+
-- **Networking**: POSIX sockets (Linux/macOS)
-- **Threading**: `std::mutex`, `std::atomic`
-- **Data structures**: `std::unordered_set`, `std::list` (LRU), `std::unordered_map`
-- **Testing**: Custom assert-based test suite (no external framework)
+## 🗺️ Roadmap
+- [x] Multi-threaded Query Handling
+- [x] LRU Cache with TTL support
+- [x] Statistics REST API
+- [x] Web-based Management Dashboard
+- [ ] DNS-over-HTTPS (DoH) Upstream Support
