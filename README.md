@@ -139,29 +139,6 @@ Devices on your network
    (Google / Cloudflare)
 ```
 
----
-
-## 🎓 Interview Deep-Dive (The "Cheat Sheet")
-
-If you are presenting this project in an interview, be prepared to discuss these core areas:
-
-### 1. DNS Protocol Internals
-- **UDP Port 53:** Why use UDP? (Lower overhead, no handshake). When does DNS use TCP? (Zone transfers, responses > 512 bytes).
-- **Binary Parsing:** How do you handle "Compression Pointers"? (Wait for the interviewer to ask this—it shows you handled RFC 1035 §4.1.4 complexity).
-- **Resource Records (RR):** Difference between A (IPv4) and AAAA (IPv6). How does blocking work? (We return an A record pointing to `0.0.0.0`).
-
-### 2. Performance & Concurrency
-- **The LRU Cache:** Why use a `std::list` and `std::unordered_map` together? (The map provides O(1) lookup, the list provides O(1) ordering for eviction).
-- **Thread Safety:** How did you protect the cache? (We used `std::mutex`). What are the trade-offs? (Lock contention vs. data integrity).
-- **Thread Pool:** Why not create a new thread for every request? (Thread creation is expensive; a pool limits resource exhaustion).
-
-### 3. Systems Programming
-- **Endianness:** Why use `ntohs()` and `htons()`? (Network traffic is Big-Endian, but most CPUs are Little-Endian. Failing to convert will break port numbers and IDs).
-- **Memory Profiling:** How did you estimate memory usage? (Manual calculation of container sizes + reading `/proc/self/status` for the OS-level view).
-- **Graceful Shutdown:** How does the server clean up? (Signal handlers catch `SIGINT` to close sockets and join threads properly).
-
----
-
 ## 📈 Performance
 
 ### Running the Benchmark
